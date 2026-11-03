@@ -11,6 +11,7 @@ export type DigestRow = {
   lastAt: string;
 };
 
+// The night's lines by status, so a retry that later succeeded still counts as a retry.
 export type StatusCounts = { ok: number; retry: number; fail: number };
 
 export type DigestNight = {
@@ -22,4 +23,5 @@ export type DigestNight = {
   counts: StatusCounts;
 };
 
+// plan.md § 1 puts the signature here, so every reader of the type sees the contract.
 export type ReadNight = (runsDir: string, night: string) => DigestNight;

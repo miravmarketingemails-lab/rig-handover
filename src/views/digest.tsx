@@ -10,13 +10,12 @@ function unparsedNote(count: number): string {
   return count === 1 ? '1 line did not parse' : `${count} lines did not parse`;
 }
 
-export function DigestView(props: { digest: DigestNight }) {
-  const { digest } = props;
+export function DigestView({ digest }: { digest: DigestNight }) {
   return (
     <>
       <h1>digest {digest.night}</h1>
       {digest.rows.length === 0 ? (
-        <p>nothing ran</p>
+        <p class="mute">{digest.unparsed > 0 ? 'no line in this night parsed' : 'nothing ran'}</p>
       ) : (
         <table>
           <thead>

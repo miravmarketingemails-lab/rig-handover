@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { loadConfig, type RigConfig } from './config.js';
-import { digestApi } from './digest/api.js';
-import { digestPage } from './digest/page.js';
+import { readNight } from './digest/read.js';
 import { lane } from './lane.js';
 import { readStatus } from './status.js';
+import { DigestView } from './views/digest.js';
 import { Layout } from './views/layout.js';
 import { StatusBoard } from './views/status.js';
 
@@ -20,8 +20,28 @@ export function createApp(config: RigConfig = loadConfig()) {
     ),
   );
 
-  app.route('/digest', digestPage(config));
-  app.route('/api/digest', digestApi(config));
+  app.get('/digest/:night', (c) => {
+    const night = c.req.param('night');
+    const digest = readNight(config.runsDir, night);
+    if (!digest.exists) return c.text('no digest for that night', 404);
+    return c.html(
+      <Layout title={`digest ${night}`} lane={lane()}>
+        <DigestView digest={digest} />
+      </Layout>,
+    );
+  });
+
+  app.get('/api/digest/:night', (c) => {
+    const night = c.req.param('night');
+    const digest = readNight(config.runsDir, night);
+    if (!digest.exists) return c.json({ error: 'not_found', night }, 404);
+    return c.json({
+      night: digest.night,
+      rows: digest.rows,
+      unparsed: digest.unparsed,
+      counts: digest.counts,
+    });
+  });
 
   return app;
 }

@@ -4,6 +4,7 @@ import type { DigestNight, DigestRow, JobStatus, ReadNight, StatusCounts } from 
 
 type RunLine = {
   at: string;
+  atMs: number;
   job: string;
   status: JobStatus;
   owner: string | null;
@@ -16,8 +17,12 @@ type JobTotals = {
   lastAtMs: number;
 };
 
-// A night that is not YYYY-MM-DD joins into a path outside runsDir, so it is not a night.
+// Only YYYY-MM-DD names a night, so no other string reaches the file system.
 const NIGHT = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isNight(night: string): boolean {
+  return NIGHT.test(night);
+}
 
 function isStatus(value: unknown): value is JobStatus {
   return value === 'ok' || value === 'retry' || value === 'fail';
@@ -39,7 +44,9 @@ function parseLine(text: string): RunLine | null {
   const owner = line.owner;
   const error = line.error;
 
-  if (typeof at !== 'string' || Number.isNaN(Date.parse(at))) return null;
+  if (typeof at !== 'string') return null;
+  const atMs = Date.parse(at);
+  if (Number.isNaN(atMs)) return null;
   if (typeof job !== 'string' || job === '') return null;
   if (!isStatus(status)) return null;
   if (owner !== undefined && owner !== null && typeof owner !== 'string') return null;
@@ -47,6 +54,7 @@ function parseLine(text: string): RunLine | null {
 
   return {
     at,
+    atMs,
     job,
     status,
     owner: typeof owner === 'string' ? owner : null,
@@ -66,7 +74,7 @@ function readText(path: string): string | null {
 
 export const readNight: ReadNight = (runsDir: string, night: string): DigestNight => {
   const counts: StatusCounts = { ok: 0, retry: 0, fail: 0 };
-  if (!NIGHT.test(night)) return { night, exists: false, rows: [], unparsed: 0, counts };
+  if (!isNight(night)) return { night, exists: false, rows: [], unparsed: 0, counts };
   const text = readText(join(runsDir, `${night}.jsonl`));
   if (text === null) return { night, exists: false, rows: [], unparsed: 0, counts };
 
@@ -81,7 +89,7 @@ export const readNight: ReadNight = (runsDir: string, night: string): DigestNigh
       unparsed += 1;
       continue;
     }
-    const at = Date.parse(line.at);
+    counts[line.status] += 1;
     const found = totals.get(line.job);
     if (found === undefined) {
       totals.set(line.job, {
@@ -95,30 +103,30 @@ export const readNight: ReadNight = (runsDir: string, night: string): DigestNigh
           firstAt: line.at,
           lastAt: line.at,
         },
-        firstAtMs: at,
-        lastAtMs: at,
+        firstAtMs: line.atMs,
+        lastAtMs: line.atMs,
       });
       continue;
     }
     found.row.runs += 1;
     if (line.status === 'retry') found.row.retries += 1;
-    if (at < found.firstAtMs) {
-      found.firstAtMs = at;
+    if (line.atMs < found.firstAtMs) {
+      found.firstAtMs = line.atMs;
       found.row.firstAt = line.at;
     }
-    if (at >= found.lastAtMs) {
-      found.lastAtMs = at;
+    if (line.atMs >= found.lastAtMs) {
+      found.lastAtMs = line.atMs;
       found.row.lastAt = line.at;
       found.row.lastStatus = line.status;
       found.row.lastError = line.error;
-      found.row.owner = line.owner;
+      // A line without an owner must not erase one an earlier line recorded.
+      if (line.owner !== null) found.row.owner = line.owner;
     }
   }
 
   const rows = [...totals.values()]
     .map((job) => job.row)
     .sort((a, b) => (a.job < b.job ? -1 : a.job > b.job ? 1 : 0));
-  for (const row of rows) counts[row.lastStatus] += 1;
 
   return { night, exists: true, rows, unparsed, counts };
 };

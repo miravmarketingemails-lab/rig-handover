@@ -1,4 +1,9 @@
-import type { Status } from '../status.js';
+import type { NightSummary, Status } from '../status.js';
+
+function countsOf(night: NightSummary): string {
+  const c = night.counts;
+  return c ? `ok ${c.ok} · retry ${c.retry} · fail ${c.fail}` : '—';
+}
 
 export function StatusBoard({ status }: { status: Status }) {
   return (
@@ -21,8 +26,7 @@ export function StatusBoard({ status }: { status: Status }) {
         <ul>
           {status.nights.map((n) => (
             <li>
-              <a href={`/digest/${n.night}`}>{n.night}</a>
-              {` ${n.counts ? `ok ${n.counts.ok} · retry ${n.counts.retry} · fail ${n.counts.fail}` : '—'}`}
+              <a href={`/digest/${n.night}`}>{n.night}</a> {countsOf(n)}
             </li>
           ))}
         </ul>
