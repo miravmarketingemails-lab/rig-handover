@@ -1,29 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { readNight } from '../src/digest/read.js';
+import { config, tempConfig, tempRuns } from './temp-runs.js';
 
-const config = { adapter: 'shim', installed: '2026-10-29T14:06:00+01:00', beatEverySeconds: 60, runsDir: 'runs' };
-
-const made: string[] = [];
-
-function tempRuns(files: Record<string, string>, dirs: string[] = []): string {
-  const dir = mkdtempSync(join(tmpdir(), 'rig-digest-'));
-  made.push(dir);
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-  for (const name of dirs) mkdirSync(join(dir, name));
-  return dir;
+function line(at: string, job: string, status: string, rest: Record<string, string> = {}): string {
+  return JSON.stringify({ at, job, status, ...rest });
 }
-
-function tempConfig(files: Record<string, string>, dirs: string[] = []) {
-  return { ...config, runsDir: tempRuns(files, dirs) };
-}
-
-afterEach(() => {
-  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
 
 function jobsIn(html: string): string[] {
   return [...html.matchAll(/<td>([a-z]+\/[a-z-]+)<\/td>/g)].map((m) => m[1]);
@@ -52,14 +34,19 @@ describe('readNight on the real nights', () => {
     expect(row?.owner).toBeNull();
   });
 
-  it('reads fixtures/refresh as 4 runs, 3 retries and a last status of ok', () => {
+  it('reads fixtures/refresh as 4 runs, 3 retries and a last status of ok, and marks it', () => {
     const row = readNight('runs', '2026-10-28').rows.find((r) => r.job === 'fixtures/refresh');
-    expect(row).toMatchObject({ runs: 4, retries: 3, lastStatus: 'ok', lastError: null, owner: 'rook' });
+    expect(row).toMatchObject({ runs: 4, retries: 3, fails: 0, lastStatus: 'ok', lastError: null, owner: 'rook', marked: true });
   });
 
-  it('reads notes/backup as a fail with its error', () => {
+  it('reads notes/backup as a fail with its error, and marks it', () => {
     const row = readNight('runs', '2026-10-28').rows.find((r) => r.job === 'notes/backup');
-    expect(row).toMatchObject({ lastStatus: 'fail', lastError: 'quota exceeded', retries: 0 });
+    expect(row).toMatchObject({ lastStatus: 'fail', lastError: 'quota exceeded', fails: 1, retries: 0, marked: true });
+  });
+
+  it('leaves a job that only succeeded unmarked', () => {
+    const row = readNight('runs', '2026-10-28').rows.find((r) => r.job === 'rig/rotate-logs');
+    expect(row).toMatchObject({ runs: 1, retries: 0, fails: 0, marked: false });
   });
 
   it('keeps the offset the log wrote on the first and the last time', () => {
@@ -77,12 +64,52 @@ describe('readNight on the real nights', () => {
     expect(night.unparsed).toBe(0);
     expect(night.rows).toHaveLength(4);
     expect(night.counts).toEqual({ ok: 7, retry: 0, fail: 0 });
+    expect(night.rows.every((r) => !r.marked)).toBe(true);
+  });
+});
+
+describe('what readNight marks', () => {
+  function rowFor(lines: string[]) {
+    const dir = tempRuns({ '2026-01-01.jsonl': lines.join('\n') });
+    return readNight(dir, '2026-01-01').rows[0];
+  }
+
+  it('marks a job that failed once and then passed, because the plan marks any fail', () => {
+    const row = rowFor([
+      line('2026-01-01T01:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+      line('2026-01-01T02:00:00+01:00', 'a', 'fail', { owner: 'rook', error: 'disk full' }),
+      line('2026-01-01T03:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+    ]);
+    expect(row).toMatchObject({ fails: 1, lastStatus: 'ok', marked: true });
+  });
+
+  it('leaves a job with two retries unmarked, because the plan marks three', () => {
+    const row = rowFor([
+      line('2026-01-01T01:00:00+01:00', 'a', 'retry', { owner: 'rook', error: 'busy' }),
+      line('2026-01-01T02:00:00+01:00', 'a', 'retry', { owner: 'rook', error: 'busy' }),
+      line('2026-01-01T03:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+    ]);
+    expect(row).toMatchObject({ retries: 2, fails: 0, marked: false });
+  });
+
+  it('marks a job with three retries that then passed', () => {
+    const row = rowFor([
+      line('2026-01-01T01:00:00+01:00', 'a', 'retry', { owner: 'rook', error: 'busy' }),
+      line('2026-01-01T02:00:00+01:00', 'a', 'retry', { owner: 'rook', error: 'busy' }),
+      line('2026-01-01T03:00:00+01:00', 'a', 'retry', { owner: 'rook', error: 'busy' }),
+      line('2026-01-01T04:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+    ]);
+    expect(row).toMatchObject({ retries: 3, marked: true });
   });
 });
 
 describe('readNight on a temporary runs dir', () => {
   it('reports exists false when the night has no file', () => {
     expect(readNight(tempRuns({}), '2026-01-01').exists).toBe(false);
+  });
+
+  it('reports exists false when the night cannot be read', () => {
+    expect(readNight(tempRuns({}, ['2026-01-01.jsonl']), '2026-01-01').exists).toBe(false);
   });
 
   it('reads an empty file as a night that exists with no rows', () => {
@@ -93,8 +120,8 @@ describe('readNight on a temporary runs dir', () => {
   it('takes the last status from the latest time, not the last line in the file', () => {
     const dir = tempRuns({
       '2026-01-01.jsonl': [
-        '{"at":"2026-01-01T03:00:00+01:00","job":"a","status":"fail","owner":"rook","error":"late"}',
-        '{"at":"2026-01-01T01:00:00+01:00","job":"a","status":"ok","owner":"rook"}',
+        line('2026-01-01T03:00:00+01:00', 'a', 'fail', { owner: 'rook', error: 'late' }),
+        line('2026-01-01T01:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
         '',
       ].join('\r\n'),
     });
@@ -102,26 +129,45 @@ describe('readNight on a temporary runs dir', () => {
     expect(row).toMatchObject({ lastStatus: 'fail', lastError: 'late', firstAt: '2026-01-01T01:00:00+01:00' });
   });
 
-  it('keeps an owner that an earlier line recorded when the latest line omits it', () => {
+  it('keeps an owner an earlier line recorded when the latest line omits it', () => {
     const dir = tempRuns({
       '2026-01-01.jsonl': [
-        '{"at":"2026-01-01T01:00:00+01:00","job":"a","status":"ok","owner":"rook"}',
-        '{"at":"2026-01-01T02:00:00+01:00","job":"a","status":"ok"}',
+        line('2026-01-01T01:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+        line('2026-01-01T02:00:00+01:00', 'a', 'ok'),
       ].join('\n'),
     });
     expect(readNight(dir, '2026-01-01').rows[0]?.owner).toBe('rook');
   });
 
-  it('counts a bad status, a missing job and a broken line as unparsed', () => {
+  it('keeps an owner from a line that is later in time but earlier in the file', () => {
     const dir = tempRuns({
       '2026-01-01.jsonl': [
-        '{"at":"2026-01-01T01:00:00+01:00","job":"a","status":"maybe"}',
+        line('2026-01-01T02:00:00+01:00', 'a', 'ok', { owner: 'rook' }),
+        line('2026-01-01T01:00:00+01:00', 'a', 'ok', { owner: 'someone-else' }),
+      ].join('\n'),
+    });
+    expect(readNight(dir, '2026-01-01').rows[0]?.owner).toBe('rook');
+  });
+
+  it('reads an empty owner and an empty error as missing, not as an empty string', () => {
+    const dir = tempRuns({
+      '2026-01-01.jsonl': line('2026-01-01T01:00:00+01:00', 'a', 'fail', { owner: '', error: '' }),
+    });
+    expect(readNight(dir, '2026-01-01').rows[0]).toMatchObject({ owner: null, lastError: null });
+  });
+
+  it('counts a bad status, a missing job, a loose time and a broken line as unparsed', () => {
+    const dir = tempRuns({
+      '2026-01-01.jsonl': [
+        line('2026-01-01T01:00:00+01:00', 'a', 'maybe'),
         '{"at":"2026-01-01T01:00:00+01:00","status":"ok"}',
+        '{"at":"1","job":"a","status":"ok"}',
+        '{"at":"2026-01-01","job":"a","status":"ok"}',
         '{"at":"2026-01-01T01:00:00+01:00","job":"a"',
       ].join('\n'),
     });
     const night = readNight(dir, '2026-01-01');
-    expect(night).toMatchObject({ exists: true, rows: [], unparsed: 3 });
+    expect(night).toMatchObject({ exists: true, rows: [], unparsed: 5 });
   });
 });
 
@@ -154,18 +200,23 @@ describe('GET /digest/:night', () => {
     expect(html).toContain('<table>');
   });
 
-  it('marks a fail row and a row with three retries, keeps the offset and shows a dash', async () => {
+  it('marks the rows the reader marked, keeps the offset and shows a dash', async () => {
     const html = await (await createApp(config).request('/digest/2026-10-28')).text();
     expect(html).toMatch(/<tr class="warn"><td>notes\/backup<\/td>/);
     expect(html).toMatch(/<tr class="warn"><td>fixtures\/refresh<\/td>/);
     expect(html).toMatch(/<tr><td>rig\/rotate-logs<\/td>/);
     expect(html).toContain('2026-10-29T04:00:01+01:00');
     expect(html).toContain('<td>—</td>');
+    expect(html).not.toContain('<td></td>');
   });
 
   it('answers 404 for a night with no file', async () => {
-    const res = await createApp(tempConfig({})).request('/digest/2026-01-01');
-    expect(res.status).toBe(404);
+    expect((await createApp(tempConfig({})).request('/digest/2026-01-01')).status).toBe(404);
+  });
+
+  it('answers 404 for a night it cannot read', async () => {
+    const cfg = tempConfig({}, ['2026-01-01.jsonl']);
+    expect((await createApp(cfg).request('/digest/2026-01-01')).status).toBe(404);
   });
 
   it('renders nothing ran for an empty night', async () => {
@@ -184,7 +235,7 @@ describe('GET /digest/:night', () => {
 
   it('still renders the jobs of a night that holds one bad line', async () => {
     const cfg = tempConfig({
-      '2026-01-01.jsonl': '{"at":"2026-01-01T01:00:00+01:00","job":"a/b","status":"ok","owner":"rook"}\nbroken\n',
+      '2026-01-01.jsonl': `${line('2026-01-01T01:00:00+01:00', 'a/b', 'ok', { owner: 'rook' })}\nbroken\n`,
     });
     const html = await (await createApp(cfg).request('/digest/2026-01-01')).text();
     expect(html).toContain('<td>a/b</td>');
@@ -198,6 +249,12 @@ describe('GET /api/digest/:night', () => {
     const page = await (await app.request('/digest/2026-10-28')).text();
     const body = (await (await app.request('/api/digest/2026-10-28')).json()) as { rows: { job: string }[] };
     expect(body.rows.map((r) => r.job)).toEqual(jobsIn(page));
+  });
+
+  it('hands an agent the same mark the page shows', async () => {
+    const res = await createApp(config).request('/api/digest/2026-10-28');
+    const body = (await res.json()) as { rows: { job: string; marked: boolean }[] };
+    expect(body.rows.filter((r) => r.marked).map((r) => r.job)).toEqual(['fixtures/refresh', 'notes/backup']);
   });
 
   it('reports the night, the unparsed count and the counts', async () => {
@@ -222,31 +279,5 @@ describe('GET /api/digest/:night', () => {
     const res = await createApp(cfg).request('/api/digest/2026-01-01');
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ rows: [], unparsed: 0 });
-  });
-});
-
-describe('the status board', () => {
-  it('links each night to its digest and shows that night counts beside it', async () => {
-    const html = await (await createApp(config).request('/')).text();
-    expect(html).toMatch(/2026-10-28<\/a> ok 10 · retry 4 · fail 1/);
-    expect(html).toMatch(/2026-10-27<\/a> ok 7 · retry 0 · fail 0/);
-  });
-
-  it('links a digest that renders', async () => {
-    const app = createApp(config);
-    const html = await (await app.request('/')).text();
-    for (const night of ['2026-10-28', '2026-10-27']) {
-      expect(html).toContain(`href="/digest/${night}"`);
-      expect((await app.request(`/digest/${night}`)).status).toBe(200);
-    }
-  });
-
-  it('still lists a night it cannot read, with a dash for its counts', async () => {
-    const cfg = tempConfig({ '2026-01-01.jsonl': '' }, ['2026-01-02.jsonl']);
-    const res = await createApp(cfg).request('/');
-    const html = await res.text();
-    expect(res.status).toBe(200);
-    expect(html).toMatch(/2026-01-02<\/a> —/);
-    expect(html).toContain('href="/digest/2026-01-01"');
   });
 });

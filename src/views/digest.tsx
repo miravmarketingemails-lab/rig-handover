@@ -1,10 +1,5 @@
-import type { DigestNight, DigestRow } from '../digest/types.js';
-
-const dash = '—';
-
-function isMarked(row: DigestRow): boolean {
-  return row.retries >= 3 || row.lastStatus === 'fail';
-}
+import type { DigestNight } from '../digest/types.js';
+import { dash } from './dash.js';
 
 function unparsedNote(count: number): string {
   return count === 1 ? '1 line did not parse' : `${count} lines did not parse`;
@@ -24,6 +19,7 @@ export function DigestView({ digest }: { digest: DigestNight }) {
               <th>owner</th>
               <th>runs</th>
               <th>retries</th>
+              <th>fails</th>
               <th>last status</th>
               <th>last error</th>
               <th>first</th>
@@ -32,11 +28,12 @@ export function DigestView({ digest }: { digest: DigestNight }) {
           </thead>
           <tbody>
             {digest.rows.map((row) => (
-              <tr class={isMarked(row) ? 'warn' : undefined}>
+              <tr class={row.marked ? 'warn' : undefined}>
                 <td>{row.job}</td>
                 <td>{row.owner ?? dash}</td>
                 <td>{row.runs}</td>
                 <td>{row.retries}</td>
+                <td>{row.fails}</td>
                 <td>{row.lastStatus}</td>
                 <td>{row.lastError ?? dash}</td>
                 <td>{row.firstAt}</td>

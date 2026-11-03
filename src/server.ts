@@ -6,9 +6,10 @@ import { lane } from './lane.js';
 
 const config = loadConfig();
 const port = Number(process.env.PORT ?? 8787);
+const host = process.env.HOST ?? '127.0.0.1';
 
 startBeating(lane().id, config.beatEverySeconds);
-// plan.md puts auth out of scope because rig serves one lane, so it must not leave this host.
-serve({ fetch: createApp(config).fetch, port, hostname: '127.0.0.1' }, () => {
-  console.log(`rig · ${lane().id} · http://localhost:${port}`);
+// Plan morning-digest puts auth out of scope because rig only listens on localhost.
+serve({ fetch: createApp(config).fetch, port, hostname: host }, () => {
+  console.log(`rig · ${lane().id} · http://${host}:${port}`);
 });

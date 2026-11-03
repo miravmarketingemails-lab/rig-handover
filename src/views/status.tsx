@@ -1,8 +1,10 @@
 import type { NightSummary, Status } from '../status.js';
+import { dash } from './dash.js';
 
+// Lines, not jobs: a job that retried and then passed shows in both counts.
 function countsOf(night: NightSummary): string {
   const c = night.counts;
-  return c ? `ok ${c.ok} · retry ${c.retry} · fail ${c.fail}` : '—';
+  return c ? `lines ok ${c.ok} · retry ${c.retry} · fail ${c.fail}` : dash;
 }
 
 export function StatusBoard({ status }: { status: Status }) {
