@@ -16,6 +16,9 @@ type JobTotals = {
   lastAtMs: number;
 };
 
+// A night that is not YYYY-MM-DD joins into a path outside runsDir, so it is not a night.
+const NIGHT = /^\d{4}-\d{2}-\d{2}$/;
+
 function isStatus(value: unknown): value is JobStatus {
   return value === 'ok' || value === 'retry' || value === 'fail';
 }
@@ -63,6 +66,7 @@ function readText(path: string): string | null {
 
 export const readNight: ReadNight = (runsDir: string, night: string): DigestNight => {
   const counts: StatusCounts = { ok: 0, retry: 0, fail: 0 };
+  if (!NIGHT.test(night)) return { night, exists: false, rows: [], unparsed: 0, counts };
   const text = readText(join(runsDir, `${night}.jsonl`));
   if (text === null) return { night, exists: false, rows: [], unparsed: 0, counts };
 
