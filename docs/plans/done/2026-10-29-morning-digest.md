@@ -1,8 +1,9 @@
 ---
 plan: morning-digest
-status: ready
+status: done
 owner: rook
 opened: 2026-10-29
+closed: 2026-11-04
 ---
 
 # Morning digest
@@ -77,3 +78,31 @@ page again with `LANE_MARKER` unset (the banner reads "no marker set") and uploa
 link. Move this plan to `docs/plans/done/` with its issue list.
 
 Done when: the preview link no longer shows the lane marker.
+
+## Issues
+
+| # | Issue | Blocked by | Worker | Closed |
+|---|-------|-----------|--------|--------|
+| 1 | Digest night shape and the route mounts | — | claude-code · opus-5 · default | 2026-11-03 |
+| 2 | Run log reader: one row per job | #1 | claude-code subagent · opus-5 | 2026-11-03 |
+| 3 | Digest page: GET /digest/:night | #1, #2 | claude-code subagent · sonnet-5.5 | 2026-11-03 |
+| 4 | Digest JSON: GET /api/digest/:night | #1, #2 | claude-code subagent · sonnet-5.5 | 2026-11-03 |
+| 5 | Board link: each night links to its digest | #1, #2 | claude-code subagent · sonnet-5.5 | 2026-11-03 |
+| 6 | Route tests for the digest page and JSON | #3, #4 | claude-code subagent · sonnet-5.5 | 2026-11-03 |
+| 7 | Preview for review on a public link | #3 | claude-code · opus-5 · high | 2026-11-04 |
+| 8 | Clean up: take the marker off, file the plan | #7 | claude-code · opus-5 · high | 2026-11-04 |
+
+Two issues came from review of the eight above, not from the plan:
+
+| # | Issue | Found by | Closed |
+|---|-------|----------|--------|
+| 9 | readNight accepts any night string, so a route can read a .jsonl outside runsDir | work on #4 | 2026-11-03 |
+| 12 | Apply the findings from the two-stage review before the preview | review stages 1 and 2 | 2026-11-03 |
+
+Three questions stay open for the plan's owner:
+
+| # | Question |
+|---|----------|
+| 10 | The status board reads every night file on every request. § 2c asks for counts for every night, so a cache is a change to the plan. |
+| 11 | A job whose last status is retry is not marked. The code matches the plan, so the owner decides. |
+| 13 | Does "last error" mean the latest line, or the last error met? |
