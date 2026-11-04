@@ -14,8 +14,7 @@ in a shell this agent can run.
 2. Draft the split as a table: title · plan section · scope · done when · blocked by.
    One issue per unit of work.
 3. **Stop and show the table to the human.** Publish nothing until they approve it.
-4. Ask the human what every issue here must carry (fields, labels, wording), unless it is
-   already written down in this session or in the repo.
+4. Use the shape below. Ask the human only about what it does not cover.
 5. Create each issue in dependency order, so blocked-by can cite real numbers:
 
    ```sh
@@ -23,6 +22,41 @@ in a shell this agent can run.
    ```
 
 6. Record every issue URL from gh's output (not from memory) and reply with the list.
+
+## What every issue carries
+
+This is the shape ADR 0004 leaves to the repo. It holds for issues on GitHub and for issues as
+files.
+
+**Title:** what the work produces, not the plan's wording. `Digest page: GET /digest/:night`.
+
+**Label:** one label per plan, `plan:<plan slug>`, taken from the plan file name. Every issue from
+that plan carries it and nothing else. It is how a reader finds the whole split later, after the
+plan has moved to `docs/plans/done/`.
+
+**Body:** the first line cites the plan section, then three headings, in this order:
+
+```md
+Source: plan.md § 2a
+
+## Scope
+
+<what to change, which files, which cases. Name a constraint a worker cannot guess.>
+
+## Done when
+
+<what a reader can run or see. No "it works".>
+
+## Blocked by
+
+#1
+```
+
+- `Source:` is the first line, before any heading. The section number is the plan's own, so a
+  reader can go back to the sentence the work came from.
+- `## Blocked by` lists real issue numbers, which is why step 5 creates issues in dependency
+  order. Nothing blocks it: write `nothing`.
+- No other headings. A worker reads three.
 
 Closing one, with the closing comment from AGENTS.md:
 

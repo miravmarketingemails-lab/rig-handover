@@ -25,7 +25,8 @@ One file per issue: `docs/issues/<NNN>-<slug>.md`. `NNN` is the issue number, th
 `001`, never reused. It is what `#n` means in `Blocked by` and in commit messages.
 
 YAML frontmatter holds what GitHub would hold for the issue. The body is what the issue would
-say on GitHub, word for word.
+say on GitHub, word for word. Its shape is in the skill `plan-to-issues`, section "What every
+issue carries".
 
 | Field | Value |
 |-------|-------|
